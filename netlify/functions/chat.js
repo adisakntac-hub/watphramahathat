@@ -81,7 +81,9 @@ exports.handler = async function (event) {
 ข้อมูลอ้างอิง:
 ${TEMPLE_KNOWLEDGE}
 
-คำถามจากนักท่องเที่ยว: ${text}`;
+คำถามจากนักท่องเที่ยว: ${text}
+
+(สำคัญมาก: ตอบเป็นภาษาเดียวกับคำถามข้างต้นเท่านั้น หากคำถามเป็นภาษาไทยให้ตอบเป็นภาษาไทยทั้งหมด ห้ามตอบเป็นภาษาอังกฤษเด็ดขาด หากคำถามเป็นภาษาอังกฤษจึงค่อยตอบเป็นภาษาอังกฤษ)`;
 
     try {
         const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
