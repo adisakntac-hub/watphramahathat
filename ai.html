@@ -212,10 +212,29 @@
             flex-shrink: 0;
         }
 
-        .btn-mic, .btn-speak {
+        .btn-mic, .btn-speak, .btn-stop-speak {
             background: #FFF;
             color: var(--primary-color);
             border: 1px solid #DDD;
+        }
+
+        .btn-stop-speak {
+            background: #E74C3C;
+            border-color: #E74C3C;
+            color: #FFF;
+            animation: pulse 1.2s infinite;
+        }
+
+        .btn-stop-speak:hover {
+            background: #c0392b;
+        }
+
+        .speak-note {
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            padding: 6px 20px 0;
+            background: #FFF;
         }
 
         .btn-send:hover, .btn-mic:hover, .btn-speak:hover {
@@ -329,7 +348,10 @@
         <div class="chat-input-area">
             <button class="btn-lang" id="langToggleBtn" title="สลับภาษาที่ใช้พูดถาม (ไทย/อังกฤษ)">TH</button>
             <input type="text" id="userInput" class="chat-input" placeholder="พิมพ์หรือกดไมค์เพื่อพูดคำถาม..." autocomplete="off">
-            <button class="btn-mic" id="micBtn" title="พูดถาม">
+            <button class="btn-stop-speak" id="stopSpeakBtn" title="หยุดเสียงพูด AI" style="display:none;">
+                <i class="fa-solid fa-stop"></i>
+            </button>
+            <button class="btn-mic" id="micBtn" title="พูดถาม (กดเพื่อแทรกได้ทันทีแม้ AI กำลังพูดอยู่)">
                 <i class="fa-solid fa-microphone"></i>
             </button>
             <button class="btn-speak" id="speakToggleBtn" title="เปิด/ปิดเสียงตอบอัตโนมัติ">
@@ -340,6 +362,7 @@
             </button>
         </div>
         <p class="voice-note" id="voiceNote" style="display:none;">เบราว์เซอร์นี้ไม่รองรับการพูด/ฟังเสียงบางส่วน กรุณาพิมพ์คำถามแทนครับ</p>
+        <p class="speak-note" id="speakingNote" style="display:none;">🔊 กำลังพูดอยู่... กดปุ่มหยุด หรือกดไมค์เพื่อถามแทรกได้เลย</p>
     </main>
 
     <footer>
@@ -364,6 +387,8 @@
         const sendBtn = document.getElementById('sendBtn');
         const micBtn = document.getElementById('micBtn');
         const speakToggleBtn = document.getElementById('speakToggleBtn');
+        const stopSpeakBtn = document.getElementById('stopSpeakBtn');
+        const speakingNote = document.getElementById('speakingNote');
         const langToggleBtn = document.getElementById('langToggleBtn');
         const voiceNote = document.getElementById('voiceNote');
 
@@ -390,15 +415,14 @@
         let isSpeaking = false; // กำลังพูดอยู่ตอนนี้หรือไม่
 
         function updateSpeakBtnIcon() {
-            if (isSpeaking) {
-                speakToggleBtn.innerHTML = '<i class="fa-solid fa-stop"></i>';
-                speakToggleBtn.title = 'หยุดเสียงพูด';
-            } else {
-                speakToggleBtn.innerHTML = autoSpeak
-                    ? '<i class="fa-solid fa-volume-high"></i>'
-                    : '<i class="fa-solid fa-volume-xmark"></i>';
-                speakToggleBtn.title = 'เปิด/ปิดเสียงตอบอัตโนมัติ';
-            }
+            speakToggleBtn.innerHTML = autoSpeak
+                ? '<i class="fa-solid fa-volume-high"></i>'
+                : '<i class="fa-solid fa-volume-xmark"></i>';
+            speakToggleBtn.title = 'เปิด/ปิดเสียงตอบอัตโนมัติ';
+
+            // ปุ่มหยุดเสียง + ข้อความแจ้งเตือน แสดงเฉพาะตอนกำลังพูดอยู่จริงเท่านั้น
+            stopSpeakBtn.style.display = isSpeaking ? 'flex' : 'none';
+            speakingNote.style.display = isSpeaking ? 'block' : 'none';
         }
 
         function stopSpeaking() {
@@ -420,19 +444,18 @@
             window.speechSynthesis.speak(utterance);
         }
 
+        stopSpeakBtn.addEventListener('click', stopSpeaking);
+
         speakToggleBtn.addEventListener('click', function () {
-            // ถ้ากำลังพูดอยู่ ปุ่มนี้จะทำหน้าที่ "หยุดพูดทันที" โดยไม่เปลี่ยนการตั้งค่าเปิด/ปิดถาวร
-            if (isSpeaking) {
-                stopSpeaking();
-                return;
-            }
             autoSpeak = !autoSpeak;
             speakToggleBtn.classList.toggle('muted', !autoSpeak);
+            if (!autoSpeak) stopSpeaking();
             updateSpeakBtnIcon();
         });
 
         if (!('speechSynthesis' in window)) {
             speakToggleBtn.style.display = 'none';
+            stopSpeakBtn.style.display = 'none';
         }
 
         /* =========================
@@ -484,7 +507,14 @@
                 }
                 stopSpeaking(); // ถ้า AI กำลังพูดอยู่ ให้หยุดทันทีเมื่อผู้ใช้กดไมค์จะถามแทรก
                 recognition.lang = voiceLang;
-                recognition.start();
+                try {
+                    recognition.start();
+                } catch (e) {
+                    // เผื่อกรณีเบราว์เซอร์ยังไม่พร้อม (เช่นเพิ่งเรียก cancel ไปหมาดๆ) ลองใหม่อีกครั้งสั้นๆ
+                    setTimeout(function () {
+                        try { recognition.start(); } catch (e2) { console.error('เริ่มไมค์ไม่สำเร็จ:', e2); }
+                    }, 150);
+                }
             });
         } else {
             micBtn.style.display = 'none';
