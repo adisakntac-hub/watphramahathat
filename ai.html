@@ -368,7 +368,8 @@
         const voiceNote = document.getElementById('voiceNote');
 
         let voiceLang = 'th-TH';   // ภาษาที่ใช้ตอนพูดถาม (สลับได้ด้วยปุ่ม TH/EN)
-        let autoSpeak = true;      // เปิดเสียงตอบอัตโนมัติเป็นค่าเริ่มต้น
+        let autoSpeak = true;      // เปิดเสียงตอบอัตโนมัติเป็นค่าเริ่มต้น (แต่จะพูดเฉพาะตอนถามด้วยเสียงเท่านั้น)
+        let inputWasVoice = false; // true เฉพาะตอนคำถามล่าสุดมาจากการกดไมค์พูด ไม่ใช่พิมพ์
 
         /* =========================
            ตรวจจับภาษาไทย/อังกฤษแบบง่าย (เช็คจากตัวอักษรไทย)
@@ -386,6 +387,26 @@
         /* =========================
            Text-to-Speech (ให้ AI พูดตอบ)
         ========================= */
+        let isSpeaking = false; // กำลังพูดอยู่ตอนนี้หรือไม่
+
+        function updateSpeakBtnIcon() {
+            if (isSpeaking) {
+                speakToggleBtn.innerHTML = '<i class="fa-solid fa-stop"></i>';
+                speakToggleBtn.title = 'หยุดเสียงพูด';
+            } else {
+                speakToggleBtn.innerHTML = autoSpeak
+                    ? '<i class="fa-solid fa-volume-high"></i>'
+                    : '<i class="fa-solid fa-volume-xmark"></i>';
+                speakToggleBtn.title = 'เปิด/ปิดเสียงตอบอัตโนมัติ';
+            }
+        }
+
+        function stopSpeaking() {
+            window.speechSynthesis.cancel();
+            isSpeaking = false;
+            updateSpeakBtnIcon();
+        }
+
         function speakText(htmlText) {
             if (!('speechSynthesis' in window) || !autoSpeak) return;
             window.speechSynthesis.cancel(); // กันเสียงซ้อนจากคำถามก่อนหน้า
@@ -393,16 +414,21 @@
             const utterance = new SpeechSynthesisUtterance(cleanText);
             utterance.lang = detectSpeechLang(cleanText);
             utterance.rate = 1;
+            utterance.onstart = function () { isSpeaking = true; updateSpeakBtnIcon(); };
+            utterance.onend = function () { isSpeaking = false; updateSpeakBtnIcon(); };
+            utterance.onerror = function () { isSpeaking = false; updateSpeakBtnIcon(); };
             window.speechSynthesis.speak(utterance);
         }
 
         speakToggleBtn.addEventListener('click', function () {
+            // ถ้ากำลังพูดอยู่ ปุ่มนี้จะทำหน้าที่ "หยุดพูดทันที" โดยไม่เปลี่ยนการตั้งค่าเปิด/ปิดถาวร
+            if (isSpeaking) {
+                stopSpeaking();
+                return;
+            }
             autoSpeak = !autoSpeak;
             speakToggleBtn.classList.toggle('muted', !autoSpeak);
-            speakToggleBtn.innerHTML = autoSpeak
-                ? '<i class="fa-solid fa-volume-high"></i>'
-                : '<i class="fa-solid fa-volume-xmark"></i>';
-            if (!autoSpeak) window.speechSynthesis.cancel();
+            updateSpeakBtnIcon();
         });
 
         if (!('speechSynthesis' in window)) {
@@ -447,6 +473,7 @@
             recognition.onresult = function (event) {
                 const spokenText = event.results[0][0].transcript;
                 userInput.value = spokenText;
+                inputWasVoice = true; // ทำเครื่องหมายว่าคำถามนี้มาจากการพูด จะได้พูดตอบกลับด้วย
                 sendMessage(); // ส่งคำถามที่พูดโดยอัตโนมัติ ไม่ต้องกดส่งซ้ำ
             };
 
@@ -455,6 +482,7 @@
                     recognition.stop();
                     return;
                 }
+                stopSpeaking(); // ถ้า AI กำลังพูดอยู่ ให้หยุดทันทีเมื่อผู้ใช้กดไมค์จะถามแทรก
                 recognition.lang = voiceLang;
                 recognition.start();
             });
@@ -469,6 +497,9 @@
         async function sendMessage() {
             const text = userInput.value.trim();
             if (text === '') return;
+
+            const isVoiceQuestion = inputWasVoice; // จำไว้ก่อนว่าคำถามนี้มาจากไมค์หรือพิมพ์
+            inputWasVoice = false; // รีเซ็ตทันที กันรอบถัดไป (ที่อาจพิมพ์) พูดตอบผิด
 
             appendMessage(text, 'msg-user');
             userInput.value = '';
@@ -493,7 +524,9 @@
                 let aiReply = (data.reply || '').replace(/\n/g, "<br>").replace(/\*\*/g, "");
 
                 document.getElementById(loadingId).innerHTML = aiReply;
-                speakText(aiReply);
+                if (isVoiceQuestion) {
+                    speakText(aiReply); // พูดตอบเฉพาะตอนถามด้วยเสียงเท่านั้น ไม่พูดตอนพิมพ์
+                }
 
             } catch (error) {
                 console.error("Error:", error);
