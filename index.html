@@ -328,6 +328,63 @@
 
         :focus-visible { outline: 2px solid var(--gold-deep); outline-offset: 2px; }
 
+        /* ============ Confirm Modal — แทนที่ confirm() ของเบราว์เซอร์ ============ */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(42,35,28,0.55);
+            backdrop-filter: blur(2px);
+            display: none;
+            align-items: center; justify-content: center;
+            z-index: 100;
+            padding: 20px;
+            animation: overlayIn 0.18s ease;
+        }
+        @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .modal-box {
+            background: var(--parchment);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            max-width: 340px;
+            width: 100%;
+            padding: 26px 24px 20px;
+            text-align: center;
+            box-shadow: var(--shadow-lift);
+            animation: modalIn 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.1);
+        }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+        .modal-icon {
+            width: 48px; height: 48px;
+            border-radius: 50%;
+            background: var(--parchment-2);
+            color: var(--gold-deep);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem;
+            margin: 0 auto 14px;
+        }
+        .modal-icon.danger { background: rgba(124,43,43,0.12); color: var(--maroon); }
+
+        .modal-title { font-family: 'Noto Serif Thai', serif; font-weight: 600; font-size: 1.05rem; color: var(--ink); margin-bottom: 8px; }
+        .modal-message { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.55; margin-bottom: 20px; }
+
+        .modal-actions { display: flex; gap: 10px; }
+        .modal-btn {
+            flex: 1;
+            padding: 11px 0;
+            border-radius: 24px;
+            border: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+        .modal-btn:hover { opacity: 0.9; }
+        .modal-btn:active { transform: scale(0.97); }
+        .modal-btn-cancel { background: var(--parchment-3); color: var(--ink); }
+        .modal-btn-confirm { background: linear-gradient(135deg, var(--gold) 0%, var(--gold-deep) 100%); color: #fff; }
+        .modal-btn-confirm.danger { background: linear-gradient(135deg, #9C3D3D 0%, var(--maroon) 100%); }
+
         .end-screen {
             height: 100vh;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -405,6 +462,18 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-box">
+            <div class="modal-icon" id="modalIcon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="modal-title" id="modalTitle"></div>
+            <div class="modal-message" id="modalMessage"></div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" id="modalCancelBtn"></button>
+                <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn"></button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // เรียกผ่าน Netlify Function (เส้นทางเดียวกับเว็บ ไม่ติด CORS)
         // API Key จริงตั้งอยู่ที่ Netlify Environment Variable ชื่อ GEMINI_API_KEY เท่านั้น
@@ -422,6 +491,103 @@
         const speakingNote = document.getElementById('speakingNote');
         const langToggleBtn = document.getElementById('langToggleBtn');
         const voiceNote = document.getElementById('voiceNote');
+
+        // ============ Modal ยืนยัน (แทนที่ confirm() ของเบราว์เซอร์) ============
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalIcon = document.getElementById('modalIcon');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+
+        function showConfirmModal(opts) {
+            return new Promise(function (resolve) {
+                modalTitle.textContent = opts.title;
+                modalMessage.textContent = opts.message;
+                modalCancelBtn.textContent = opts.cancelLabel;
+                modalConfirmBtn.textContent = opts.confirmLabel;
+                modalIcon.classList.toggle('danger', !!opts.danger);
+                modalConfirmBtn.classList.toggle('danger', !!opts.danger);
+                modalOverlay.style.display = 'flex';
+
+                function cleanup(result) {
+                    modalOverlay.style.display = 'none';
+                    modalConfirmBtn.removeEventListener('click', onConfirm);
+                    modalCancelBtn.removeEventListener('click', onCancel);
+                    modalOverlay.removeEventListener('mousedown', onOverlayClick);
+                    document.removeEventListener('keydown', onKeydown);
+                    resolve(result);
+                }
+                function onConfirm() { cleanup(true); }
+                function onCancel() { cleanup(false); }
+                function onOverlayClick(e) { if (e.target === modalOverlay) cleanup(false); }
+                function onKeydown(e) { if (e.key === 'Escape') cleanup(false); }
+
+                modalConfirmBtn.addEventListener('click', onConfirm);
+                modalCancelBtn.addEventListener('click', onCancel);
+                modalOverlay.addEventListener('mousedown', onOverlayClick);
+                document.addEventListener('keydown', onKeydown);
+                modalConfirmBtn.focus();
+            });
+        }
+
+        // ============ ข้อความ UI สองภาษา (สลับตามปุ่ม TH/EN — เริ่มต้นเป็นไทยเสมอ) ============
+        const UI_TEXT = {
+            'th-TH': {
+                placeholder: 'พิมพ์หรือกดไมค์เพื่อพูดคำถาม...',
+                statusReady: 'พร้อมตอบคำถาม · ไทย/English',
+                statusListening: '🎙️ กำลังฟัง...',
+                statusSpeaking: '🔊 กำลังพูดตอบ...',
+                statusThinking: 'กำลังค้นหาคำตอบ...',
+                newChatLabel: 'เริ่มใหม่',
+                newChatTitleAttr: 'เริ่มบทสนทนาใหม่',
+                endChatLabel: 'จบการสนทนา',
+                endChatTitleAttr: 'จบการสนทนา',
+                modalNewTitle: 'เริ่มบทสนทนาใหม่?',
+                modalNewMessage: 'ข้อความสนทนาเดิมทั้งหมดจะถูกลบ ไม่สามารถกู้คืนได้',
+                modalNewConfirm: 'เริ่มใหม่',
+                modalEndTitle: 'จบการสนทนา?',
+                modalEndMessage: 'ต้องการปิดหน้าต่างนี้ใช่หรือไม่',
+                modalEndConfirm: 'จบการสนทนา',
+                modalCancel: 'ยกเลิก'
+            },
+            'en-US': {
+                placeholder: 'Type or tap the mic to ask...',
+                statusReady: 'Ready to help · Thai/English',
+                statusListening: '🎙️ Listening...',
+                statusSpeaking: '🔊 Speaking...',
+                statusThinking: 'Searching for an answer...',
+                newChatLabel: 'New Chat',
+                newChatTitleAttr: 'Start a new conversation',
+                endChatLabel: 'End Chat',
+                endChatTitleAttr: 'End conversation',
+                modalNewTitle: 'Start a new conversation?',
+                modalNewMessage: 'All current messages will be cleared and cannot be recovered.',
+                modalNewConfirm: 'Start New',
+                modalEndTitle: 'End this conversation?',
+                modalEndMessage: 'Are you sure you want to close this window?',
+                modalEndConfirm: 'End Chat',
+                modalCancel: 'Cancel'
+            }
+        };
+
+        function applyUILanguage(lang) {
+            const t = UI_TEXT[lang];
+            userInput.placeholder = t.placeholder;
+
+            const newLabel = document.querySelector('#newChatBtn .action-label');
+            if (newLabel) newLabel.textContent = t.newChatLabel;
+            document.getElementById('newChatBtn').title = t.newChatTitleAttr;
+
+            const endLabel = document.querySelector('#endChatBtn .action-label');
+            if (endLabel) endLabel.textContent = t.endChatLabel;
+            document.getElementById('endChatBtn').title = t.endChatTitleAttr;
+
+            // อัปเดตข้อความสถานะเฉพาะตอนที่ไม่ได้กำลังฟัง/พูด/ค้นหาอยู่ (สถานะปกติ)
+            if (!isListening && !isSpeaking) {
+                updateStatus(t.statusReady, false);
+            }
+        }
 
         let voiceLang = 'th-TH';   // ภาษาที่ใช้ตอนพูดถาม (สลับได้ด้วยปุ่ม TH/EN)
         let autoSpeak = true;      // เปิดเสียงตอบอัตโนมัติเป็นค่าเริ่มต้น (แต่จะพูดเฉพาะตอนถามด้วยเสียงเท่านั้น)
@@ -467,7 +633,7 @@
             window.speechSynthesis.cancel();
             isSpeaking = false;
             updateSpeakBtnIcon();
-            updateStatus('พร้อมตอบคำถาม · ไทย/English', false);
+            updateStatus(UI_TEXT[voiceLang].statusReady, false);
         }
 
         function speakText(htmlText) {
@@ -477,9 +643,9 @@
             const utterance = new SpeechSynthesisUtterance(cleanText);
             utterance.lang = detectSpeechLang(cleanText);
             utterance.rate = 1;
-            utterance.onstart = function () { isSpeaking = true; updateSpeakBtnIcon(); updateStatus('🔊 กำลังพูดตอบ...', true); };
-            utterance.onend = function () { isSpeaking = false; updateSpeakBtnIcon(); updateStatus('พร้อมตอบคำถาม · ไทย/English', false); };
-            utterance.onerror = function () { isSpeaking = false; updateSpeakBtnIcon(); updateStatus('พร้อมตอบคำถาม · ไทย/English', false); };
+            utterance.onstart = function () { isSpeaking = true; updateSpeakBtnIcon(); updateStatus(UI_TEXT[voiceLang].statusSpeaking, true); };
+            utterance.onend = function () { isSpeaking = false; updateSpeakBtnIcon(); updateStatus(UI_TEXT[voiceLang].statusReady, false); };
+            utterance.onerror = function () { isSpeaking = false; updateSpeakBtnIcon(); updateStatus(UI_TEXT[voiceLang].statusReady, false); };
             window.speechSynthesis.speak(utterance);
         }
 
@@ -503,6 +669,7 @@
         langToggleBtn.addEventListener('click', function () {
             voiceLang = (voiceLang === 'th-TH') ? 'en-US' : 'th-TH';
             langToggleBtn.textContent = (voiceLang === 'th-TH') ? 'TH' : 'EN';
+            applyUILanguage(voiceLang);
         });
 
         /* =========================
@@ -520,19 +687,19 @@
             recognition.onstart = function () {
                 isListening = true;
                 micBtn.classList.add('listening');
-                updateStatus('🎙️ กำลังฟัง...', true);
+                updateStatus(UI_TEXT[voiceLang].statusListening, true);
             };
 
             recognition.onend = function () {
                 isListening = false;
                 micBtn.classList.remove('listening');
-                updateStatus('พร้อมตอบคำถาม · ไทย/English', false);
+                updateStatus(UI_TEXT[voiceLang].statusReady, false);
             };
 
             recognition.onerror = function () {
                 isListening = false;
                 micBtn.classList.remove('listening');
-                updateStatus('พร้อมตอบคำถาม · ไทย/English', false);
+                updateStatus(UI_TEXT[voiceLang].statusReady, false);
             };
 
             recognition.onresult = function (event) {
@@ -579,7 +746,7 @@
 
             const loadingId = "loading-" + Date.now();
             appendMessage('<span class="loading-text"><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังค้นหาข้อมูล...</span>', 'msg-ai', loadingId);
-            updateStatus('กำลังค้นหาคำตอบ...', true);
+            updateStatus(UI_TEXT[voiceLang].statusThinking, true);
 
             try {
                 const response = await fetch(CHAT_ENDPOINT, {
@@ -600,14 +767,14 @@
                 if (isVoiceQuestion) {
                     speakText(aiReply); // พูดตอบเฉพาะตอนถามด้วยเสียงเท่านั้น ไม่พูดตอนพิมพ์
                 } else {
-                    updateStatus('พร้อมตอบคำถาม · ไทย/English', false);
+                    updateStatus(UI_TEXT[voiceLang].statusReady, false);
                 }
 
             } catch (error) {
                 console.error("Error:", error);
                 document.getElementById(loadingId).innerHTML = "❌ ขออภัยครับ ระบบประมวลผลมีปัญหา (" + error.message + ") กรุณาลองใหม่อีกครั้ง";
                 document.getElementById(loadingId).style.color = "red";
-                updateStatus('พร้อมตอบคำถาม · ไทย/English', false);
+                updateStatus(UI_TEXT[voiceLang].statusReady, false);
             } finally {
                 sendBtn.disabled = false;
                 userInput.focus();
@@ -647,8 +814,15 @@
         ========================= */
         const WELCOME_HTML = 'สวัสดีครับ 🙏 ผมคือ AI มัคคุเทศก์ประจำวัดพระมหาธาตุวรมหาวิหาร มีอะไรให้ผมช่วยแนะนำหรือบอกข้อมูลเกี่ยวกับวัดไหมครับ? / Hello! I\'m the AI guide for Wat Phra Mahathat. Feel free to ask me anything about the temple.';
 
-        document.getElementById('newChatBtn').addEventListener('click', function () {
-            const ok = confirm('ต้องการเริ่มบทสนทนาใหม่ใช่หรือไม่? ข้อความสนทนาเดิมทั้งหมดจะถูกลบ');
+        document.getElementById('newChatBtn').addEventListener('click', async function () {
+            const t = UI_TEXT[voiceLang];
+            const ok = await showConfirmModal({
+                title: t.modalNewTitle,
+                message: t.modalNewMessage,
+                confirmLabel: t.modalNewConfirm,
+                cancelLabel: t.modalCancel,
+                danger: false
+            });
             if (!ok) return;
 
             stopSpeaking();
@@ -658,12 +832,19 @@
             appendMessage(WELCOME_HTML, 'msg-ai');
             userInput.value = '';
             sendBtn.disabled = false;
-            updateStatus('พร้อมตอบคำถาม · ไทย/English', false);
+            updateStatus(t.statusReady, false);
             userInput.focus();
         });
 
-        document.getElementById('endChatBtn').addEventListener('click', function () {
-            const ok = confirm('ต้องการจบการสนทนาและปิดหน้าต่างนี้ใช่หรือไม่?');
+        document.getElementById('endChatBtn').addEventListener('click', async function () {
+            const t = UI_TEXT[voiceLang];
+            const ok = await showConfirmModal({
+                title: t.modalEndTitle,
+                message: t.modalEndMessage,
+                confirmLabel: t.modalEndConfirm,
+                cancelLabel: t.modalCancel,
+                danger: true
+            });
             if (!ok) return;
 
             stopSpeaking();
@@ -674,12 +855,16 @@
             // เบราว์เซอร์ส่วนใหญ่จะไม่ยอมให้สคริปต์ปิดแท็บที่ไม่ได้เปิดขึ้นมาด้วยสคริปต์เอง (ข้อจำกัดด้านความปลอดภัย)
             // ถ้า window.close() ไม่สำเร็จ หน้าเว็บจะยังอยู่ ให้เปลี่ยนไปแสดงหน้าจอ "จบการสนทนาแล้ว" แทน
             setTimeout(function () {
+                const isEN = voiceLang === 'en-US';
                 document.body.innerHTML =
                     '<div class="end-screen">' +
                     '<i class="fa-solid fa-gopuram"></i>' +
-                    '<h2>จบการสนทนาแล้ว</h2>' +
-                    '<p>ขอบคุณที่ใช้บริการ AI มัคคุเทศก์ วัดพระมหาธาตุวรมหาวิหาร นครศรีธรรมราช 🙏<br>คุณสามารถปิดแท็บนี้ได้เลย หรือกลับสู่หน้าแรกของเว็บไซต์</p>' +
-                    '<a href="places.html">ชมสถานที่สำคัญในวัด</a>' +
+                    '<h2>' + (isEN ? 'Conversation ended' : 'จบการสนทนาแล้ว') + '</h2>' +
+                    '<p>' + (isEN
+                        ? 'Thank you for using the AI Guide for Wat Phra Mahathat Woramahawihan, Nakhon Si Thammarat 🙏<br>You may close this tab, or return to the homepage.'
+                        : 'ขอบคุณที่ใช้บริการ AI มัคคุเทศก์ วัดพระมหาธาตุวรมหาวิหาร นครศรีธรรมราช 🙏<br>คุณสามารถปิดแท็บนี้ได้เลย หรือกลับสู่หน้าแรกของเว็บไซต์') +
+                    '</p>' +
+                    '<a href="places.html">' + (isEN ? 'Explore the Temple' : 'ชมสถานที่สำคัญในวัด') + '</a>' +
                     '</div>';
             }, 300);
         });
